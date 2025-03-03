@@ -20,8 +20,9 @@ volatile int panicked = 0;
 void
 backtrace() {
   uint64 frampointer = r_fp();
+  printf("backtrace:\n");
   while (PGROUNDDOWN(frampointer - 16) == PGROUNDDOWN(frampointer)) {
-    printf("backtrace: %p\n", (void*)*(uint64*)(frampointer - 8));
+    printf("%p\n", (void*)*(uint64*)(frampointer - 8));
 
     frampointer = *(uint64*)(frampointer - 16);
   }
@@ -175,8 +176,8 @@ panic(char *s)
   pr.locking = 0;
   printf("panic: ");
   printf("%s\n", s);
-  panicked = 1; // freeze uart output from other CPUs
   backtrace();
+  panicked = 1; // freeze uart output from other CPUs
   for(;;)
     ;
 }
