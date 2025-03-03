@@ -17,6 +17,16 @@
 
 volatile int panicked = 0;
 
+void
+backtrace() {
+  uint64 frampointer = r_fp();
+  while (PGROUNDDOWN(frampointer - 16) == PGROUNDDOWN(frampointer)) {
+    printf("backtrace: %p\n", (void*)*(uint64*)(frampointer - 8));
+
+    frampointer = *(uint64*)(frampointer - 16);
+  }
+}
+
 // lock to avoid interleaving concurrent printf's.
 static struct {
   struct spinlock lock;
@@ -166,6 +176,7 @@ panic(char *s)
   printf("panic: ");
   printf("%s\n", s);
   panicked = 1; // freeze uart output from other CPUs
+  backtrace();
   for(;;)
     ;
 }
