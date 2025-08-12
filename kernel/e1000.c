@@ -66,8 +66,9 @@ e1000_init(uint32 *xregs)
   regs[E1000_RDLEN] = sizeof(rx_ring);
 
   // filter by qemu's MAC address, 52:54:00:12:34:56
-  regs[E1000_RA] = 0x12005452;
-  regs[E1000_RA+1] = 0x5634 | (1<<31);
+  // 3.2.1 packet filtering.
+  regs[E1000_RA] = 0x12005452; // low
+  regs[E1000_RA+1] = 0x5634 | (1<<31); // high
   // multicast table
   for (int i = 0; i < 4096/32; i++)
     regs[E1000_MTA + i] = 0;
@@ -94,19 +95,13 @@ e1000_init(uint32 *xregs)
 int
 e1000_transmit(char *buf, int len)
 {
-  //
-  // Your code here.
-  //
-  // buf contains an ethernet frame; program it into
-  // the TX descriptor ring so that the e1000 sends it. Stash
-  // a pointer so that it can be freed after send completes.
-  //
-
   int next_idx = regs[E1000_TDT]; // ring position
   struct tx_desc *desc = &tx_ring[next_idx];
-  printf("e1000 transmit; \nlen=%d\ntx_idx=%d\nstatus=0x%x\n", len,next_idx, desc->status); 
+  printf("---\ne1000 transmit; \nlen=%d\ntx_idx=%d\nstatus=0x%x\n\n", len,next_idx, desc->status); 
   if ((desc->status & E1000_TXD_STAT_DD) != E1000_TXD_STAT_DD) {
     // a previous transition is alreay in flight.
+    // TODO: from what i understand in 2.8, this means this descriptor is now owned by the hardware,
+    // shouldn't I try the next descriptor to see if it's available?
     printf("warning: a previous transition is already in flight\nidx=%d\n", next_idx);
     return 1;
   }
@@ -130,15 +125,35 @@ e1000_transmit(char *buf, int len)
 static void
 e1000_recv(void)
 {
-  //
-  // Your code here.
-  //
-  // Check for packets that have arrived from the e1000
-  // Create and deliver a buf for each packet (using net_rx()).
-  //
-  int idx = (regs[E1000_RDT] + 1) % RX_RING_SIZE;
-  struct rx_desc *desc = &rx_ring[idx];
-  printf("e1000 recv: idx=%d\n", idx); 
+  // TODO: 3.2.3 Software must read multiple descriptors to determine the complete
+  // length for packets that span multiple receive buffers
+  
+  // loop because multiple packets could be ready and not just one.
+  int i;
+  for (i = 0; i < RX_RING_SIZE; ++i) {
+    int idx = (regs[E1000_RDT] + 1) % RX_RING_SIZE;
+    struct rx_desc *desc = &rx_ring[idx];
+    if ((desc->status & E1000_RXD_STAT_DD) != E1000_RXD_STAT_DD) {
+      // if the descriptor is not done, stop.
+      // (we have reached the head,  I think? so it's not possible for descriptors after this to be ready)
+      // Note: I imagine this happens because we always call e1000 on interrupts,
+      // and maybe the signaled interrupt is not for ready packets.
+      break;
+    }
+    
+    printf("* e1000_recv: processing %d descriptor\n", idx);
+    net_rx((char*)desc->addr, desc->length);
+  
+    // not sure if i need to update rx_buf array for this index or not. not sure why we need rx_buf at all.
+    desc->addr = (uint64)kalloc();
+    desc->status = 0;
+    __sync_synchronize();
+
+    // we have processed this packet, increment the tail to transfer ownership of the descriptor back to the hardware.
+    regs[E1000_RDT] = regs[E1000_RDT] + 1; 
+  }
+
+  printf("*** e1000_recv: processed %d packets\n", i);
 }
 
 void
