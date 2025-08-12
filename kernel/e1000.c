@@ -102,7 +102,28 @@ e1000_transmit(char *buf, int len)
   // a pointer so that it can be freed after send completes.
   //
 
+  int next_idx = regs[E1000_TDT]; // ring position
+  struct tx_desc *desc = &tx_ring[next_idx];
+  printf("e1000 transmit; \nlen=%d\ntx_idx=%d\nstatus=0x%x\n", len,next_idx, desc->status); 
+  if ((desc->status & E1000_TXD_STAT_DD) != E1000_TXD_STAT_DD) {
+    // a previous transition is alreay in flight.
+    printf("warning: a previous transition is already in flight\nidx=%d\n", next_idx);
+    return 1;
+  }
   
+  if (desc->addr != 0) {
+    printf("previous descriptor was set, freeing the buffer...\n");
+    kfree((void*)desc->addr);
+  }
+  
+  void *va = kalloc();
+  memmove(va, buf, len);
+
+  desc->addr = (uint64)va;
+  desc->length = len;
+  desc->cmd = E1000_TXD_CMD_RS | E1000_TXD_CMD_EOP;
+  __sync_synchronize();
+  regs[E1000_TDT] = (regs[E1000_TDT] + 1) % TX_RING_SIZE;
   return 0;
 }
 
@@ -115,7 +136,9 @@ e1000_recv(void)
   // Check for packets that have arrived from the e1000
   // Create and deliver a buf for each packet (using net_rx()).
   //
-
+  int idx = (regs[E1000_RDT] + 1) % RX_RING_SIZE;
+  struct rx_desc *desc = &rx_ring[idx];
+  printf("e1000 recv: idx=%d\n", idx); 
 }
 
 void
@@ -125,6 +148,8 @@ e1000_intr(void)
   // without this the e1000 won't raise any
   // further interrupts.
   regs[E1000_ICR] = 0xffffffff;
+
+  printf("e1000 interrupt\n");
 
   e1000_recv();
 }
