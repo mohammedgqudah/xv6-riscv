@@ -150,7 +150,7 @@ e1000_recv(void)
     __sync_synchronize();
 
     // we have processed this packet, increment the tail to transfer ownership of the descriptor back to the hardware.
-    regs[E1000_RDT] = regs[E1000_RDT] + 1; 
+    regs[E1000_RDT] = (regs[E1000_RDT] + 1) % RX_RING_SIZE; 
   }
 
   printf("*** e1000_recv: processed %d packets\n", i);
