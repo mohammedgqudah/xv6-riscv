@@ -141,6 +141,11 @@ e1000_recv(void)
       break;
     }
     
+    if ((desc->status & E1000_RXD_STAT_EOP) == 0) {
+      panic("multi-buffer packets are not supported yet.");
+      break;
+    }
+
     printf("* e1000_recv: processing %d descriptor\n", idx);
     net_rx((char*)desc->addr, desc->length);
   
