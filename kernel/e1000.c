@@ -18,7 +18,8 @@ static char *rx_bufs[RX_RING_SIZE];
 // remember where the e1000's registers live.
 static volatile uint32 *regs;
 
-struct spinlock e1000_lock;
+struct spinlock e1000_lock_tx;
+struct spinlock e1000_lock_rx;
 
 // called by pci_init().
 // xregs is the memory address at which the
@@ -28,7 +29,8 @@ e1000_init(uint32 *xregs)
 {
   int i;
 
-  initlock(&e1000_lock, "e1000");
+  initlock(&e1000_lock_tx, "e1000 tx lock");
+  initlock(&e1000_lock_rx, "e1000 rx lock");
 
   regs = xregs;
 
@@ -95,6 +97,10 @@ e1000_init(uint32 *xregs)
 int
 e1000_transmit(char *buf, int len)
 {
+  int rc = 0;
+
+  acquire(&e1000_lock_tx);
+
   int next_idx = regs[E1000_TDT]; // ring position
   struct tx_desc *desc = &tx_ring[next_idx];
   printf("---\ne1000 transmit; \nlen=%d\ntx_idx=%d\nstatus=0x%x\n\n", len,next_idx, desc->status); 
@@ -103,7 +109,9 @@ e1000_transmit(char *buf, int len)
     // TODO: from what i understand in 2.8, this means this descriptor is now owned by the hardware,
     // shouldn't I try the next descriptor to see if it's available?
     printf("warning: a previous transition is already in flight\nidx=%d\n", next_idx);
-    return 1;
+
+    rc = 1;
+    goto out;
   }
   
   if (desc->addr != 0) {
@@ -119,7 +127,11 @@ e1000_transmit(char *buf, int len)
   desc->cmd = E1000_TXD_CMD_RS | E1000_TXD_CMD_EOP;
   __sync_synchronize();
   regs[E1000_TDT] = (regs[E1000_TDT] + 1) % TX_RING_SIZE;
-  return 0;
+  
+  
+  out:
+    release(&e1000_lock_tx);
+    return rc;
 }
 
 static void
@@ -129,6 +141,8 @@ e1000_recv(void)
   // length for packets that span multiple receive buffers
   
   // loop because multiple packets could be ready and not just one.
+  acquire(&e1000_lock_rx);
+
   int i;
   for (i = 0; i < RX_RING_SIZE; ++i) {
     int idx = (regs[E1000_RDT] + 1) % RX_RING_SIZE;
@@ -155,9 +169,10 @@ e1000_recv(void)
     __sync_synchronize();
 
     // we have processed this packet, increment the tail to transfer ownership of the descriptor back to the hardware.
-    regs[E1000_RDT] = (regs[E1000_RDT] + 1) % RX_RING_SIZE; 
+    regs[E1000_RDT] = idx;
   }
-
+  
+  release(&e1000_lock_rx);
   printf("*** e1000_recv: processed %d packets\n", i);
 }
 
