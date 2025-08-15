@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["xv6"]
+members = ["e1000","xv6"]
 
 
 [profile.dev]
