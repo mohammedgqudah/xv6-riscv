@@ -123,3 +123,4 @@ struct rx_desc
   uint16 special;
 };
 
+#define TX_RING_SIZE 16

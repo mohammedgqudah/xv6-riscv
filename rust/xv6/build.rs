@@ -9,6 +9,7 @@ fn main() {
         // included header files changed.
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         .use_core()
+        .fit_macro_constants(true)
         .generate()
         .expect("Unable to generate bindings");
 
