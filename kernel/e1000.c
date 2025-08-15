@@ -21,12 +21,20 @@ static volatile uint32 *regs;
 struct spinlock e1000_lock_tx;
 struct spinlock e1000_lock_rx;
 
+// TODO: LLVM is doing libcall simplification, not sure how to disable this from the rust side. This is a "shim".
+int puts(const char *s) {
+  printf("%s\n", s);
+  return 0;
+}
+extern void rs_hello();
+
 // called by pci_init().
 // xregs is the memory address at which the
 // e1000's registers are mapped.
 void
 e1000_init(uint32 *xregs)
 {
+  rs_hello();
   int i;
 
   initlock(&e1000_lock_tx, "e1000 tx lock");

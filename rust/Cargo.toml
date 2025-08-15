@@ -1,0 +1,10 @@
+[workspace]
+resolver = "3"
+members = ["xv6"]
+
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
