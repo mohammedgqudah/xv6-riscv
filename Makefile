@@ -10,15 +10,20 @@ U=user
 
 RUST_DIR := rust
 RUST_TARGET := riscv64gc-unknown-none-elf
+RUST_PROFILE = release
 RUST_CRATES := e1000
 RUST_CRATES_SAN := $(subst -,_,$(RUST_CRATES))
-RUST_TARGET_DIR := $(RUST_DIR)/target/$(RUST_TARGET)/release
+RUST_TARGET_DIR := $(RUST_DIR)/target/$(RUST_TARGET)/$(RUST_PROFILE)
 RUST_LIBS       := $(addprefix $(RUST_TARGET_DIR)/lib,$(addsuffix .a,$(RUST_CRATES_SAN)))
 RUST_SRCS := $(shell find $(RUST_DIR) -name '*.rs' -o -name 'Cargo.toml')
+CARGO_FLAGS =
 
+ifeq ($(RUST_PROFILE),release)
+    CARGO_FLAGS = --release
+endif
 
 $(RUST_LIBS) &: $(RUST_SRCS)
-	+cd $(RUST_DIR) && cargo build --release
+	+cd $(RUST_DIR) && cargo build $(CARGO_FLAGS)
 
 
 OBJS = \
