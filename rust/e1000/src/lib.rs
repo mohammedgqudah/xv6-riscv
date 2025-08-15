@@ -1,4 +1,5 @@
 #![no_std]
+#![no_builtins]
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_hello() {

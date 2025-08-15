@@ -21,11 +21,6 @@ static volatile uint32 *regs;
 struct spinlock e1000_lock_tx;
 struct spinlock e1000_lock_rx;
 
-// TODO: LLVM is doing libcall simplification, not sure how to disable this from the rust side. This is a "shim".
-int puts(const char *s) {
-  printf("%s\n", s);
-  return 0;
-}
 extern void rs_hello();
 
 // called by pci_init().
