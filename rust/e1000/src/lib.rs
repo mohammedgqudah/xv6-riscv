@@ -64,13 +64,13 @@ enum Registers {
 }
 
 fn get_register(register: Registers) -> usize {
-    // SAFETY: `get_raw_regs` returns a value region in memory and `register` contains a known
+    // SAFETY: `get_raw_regs` returns a valid region in memory and `register` contains a known
     // offset in that region.
     unsafe { core::ptr::read_volatile(get_raw_regs().add(register as usize)) as usize }
 }
 
 fn set_register(register: Registers, value: u32) {
-    // SAFETY: `get_raw_regs` returns a value region in memory and `register` contains a known
+    // SAFETY: `get_raw_regs` returns a valid region in memory and `register` contains a known
     // offset in that region.
     unsafe { core::ptr::write_volatile(get_raw_regs().add(register as usize), value) };
 }
