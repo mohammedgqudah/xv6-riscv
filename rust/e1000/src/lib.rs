@@ -1,17 +1,59 @@
 #![no_std]
 #![no_builtins]
 
-use core::sync::atomic::{Ordering, fence};
+mod driver;
 
 use xv6::{
     KernelBuffer,
-    bindings::{self, E1000_TXD_CMD_EOP, E1000_TXD_CMD_RS, TX_RING_SIZE, tx_desc},
-    println,
+    bindings::{self, TX_RING_SIZE, tx_desc},
+    mutex::{Mutex, MutexGuard},
 };
 
+type TxRingDescriptors = [tx_desc; TX_RING_SIZE as usize];
+
+static TX_RING_LOCK: Mutex<()> = Mutex::new((), c"e1000_tx_ring_lock");
+static TX_RING: TxRing = TxRing::new();
 unsafe extern "C" {
-    safe fn get_raw_regs() -> *mut u32;
-    static mut tx_ring: [tx_desc; TX_RING_SIZE as usize];
+    fn get_raw_regs() -> *mut u32;
+}
+
+struct TxRing {}
+struct TxRingGuard<'a> {
+    ring: &'a mut TxRingDescriptors,
+    // guard must be declared after `ring` so that ring is droppped before releasing the lock.
+    // see: https://doc.rust-lang.org/reference/destructors.html#r-destructors.operation
+    _guard: MutexGuard<'a, ()>,
+}
+
+impl TxRing {
+    pub const fn new() -> Self {
+        Self {}
+    }
+    pub fn lock(&self) -> TxRingGuard<'_> {
+        unsafe extern "C" {
+            static mut tx_ring: TxRingDescriptors;
+        }
+
+        let guard = TX_RING_LOCK.lock();
+        TxRingGuard {
+            _guard: guard,
+            // SAFETY: We only create this static mutable reference while holding `TX_RING_LOCK`.
+            // While the lock guard is alive, *no other pointer is used and no other reference is created.*
+            // The reference’s lifetime is tied to the guard via `TxRingGuard<'a>`,
+            // and when `TxRingGuard` is dropped, `ring` is dropped so the borrow ends
+            // before the lock is released.
+            ring: unsafe {
+                #[allow(static_mut_refs)]
+                &mut tx_ring
+            },
+        }
+    }
+}
+
+impl<'a> TxRingGuard<'a> {
+    pub fn tail(&mut self) -> &mut tx_desc {
+        &mut self.ring[get_register(Registers::TDT)]
+    }
 }
 
 enum Registers {
@@ -33,49 +75,9 @@ fn set_register(register: Registers, value: u32) {
     unsafe { core::ptr::write_volatile(get_raw_regs().add(register as usize), value) };
 }
 
-// TODO: MutexGuard the ring
-fn get_tx_desc(index: usize) -> &'static mut tx_desc {
-    assert!(
-        index < bindings::TX_RING_SIZE as usize,
-        "tx ring out of bounds"
-    );
-
-    // SAFETY: the index is within bounds
-    unsafe { &mut tx_ring[index] }
-}
-
-/// Transmit a buffer.
-///
-/// This will place `buffer` in the tail of the transmission ring and then signal the NIC of a new
-/// packet. Note that this takes ownership of the buffer and the buffer is later freed when this ring
-/// slot is "done" and used later, see `replace_buffer`.
-fn transmit(buffer: KernelBuffer) -> Result<(), ()> {
-    let idx = get_register(Registers::TDT);
-    let desc = get_tx_desc(idx);
-
-    if !desc.is_done() {
-        println!(
-            "[index={}] warning: a previous transaction is already in flight.",
-            idx
-        );
-        return Err(());
-    }
-
-    desc.replace_buffer(buffer);
-    desc.cmd = E1000_TXD_CMD_RS | E1000_TXD_CMD_EOP;
-
-    // Ensure modifications to the descriptor
-    // are globally visible before signaling e1000.
-    fence(Ordering::SeqCst);
-
-    set_register(Registers::TDT, ((idx + 1) % TX_RING_SIZE as usize) as u32);
-
-    Ok(())
-}
-
 #[unsafe(no_mangle)]
 pub extern "C" fn e1000_transmit(buf: *mut core::ffi::c_char, len: i32) -> i32 {
-    match transmit(KernelBuffer::new(buf, len as usize)) {
+    match driver::transmit(KernelBuffer::new(buf, len as usize)) {
         Ok(_) => 0,
         Err(_) => 1,
     }

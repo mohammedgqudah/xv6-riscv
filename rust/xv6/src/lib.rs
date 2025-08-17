@@ -9,6 +9,7 @@ use core::{
     panic::PanicInfo,
 };
 pub mod bindings;
+pub mod mutex;
 
 #[repr(packed)]
 pub struct Page(*mut core::ffi::c_char);
