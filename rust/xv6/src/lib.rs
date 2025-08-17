@@ -1,6 +1,4 @@
 //! Rust bindings for xv6 kernel functions.
-//!
-//! Instead of manually defining these, I should use something like bindgen.
 
 #![no_std]
 
