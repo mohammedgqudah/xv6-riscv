@@ -9,7 +9,7 @@ include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
 impl tx_desc {
     pub fn is_done(&self) -> bool {
-        (self.status & E1000_TXD_STAT_DD as u8) == E1000_TXD_STAT_DD as u8
+        (self.status & E1000_TXD_STAT_DD) == E1000_TXD_STAT_DD
     }
 
     /// Free the old buffer in this descriptor and replace it with a new buffer.
@@ -19,5 +19,11 @@ impl tx_desc {
         }
         self.addr = buf.page.0 as u64;
         self.length = buf.length as u16;
+    }
+}
+
+impl rx_desc {
+    pub fn is_done(&self) -> bool {
+        (self.status & E1000_RXD_STAT_DD) == E1000_RXD_STAT_DD
     }
 }

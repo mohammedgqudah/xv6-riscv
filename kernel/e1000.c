@@ -12,8 +12,8 @@ struct tx_desc tx_ring[TX_RING_SIZE] __attribute__((aligned(16)));
 
 static char *tx_bufs[TX_RING_SIZE];
 
-#define RX_RING_SIZE 16
-static struct rx_desc rx_ring[RX_RING_SIZE] __attribute__((aligned(16)));
+extern struct rx_desc rx_ring[RX_RING_SIZE];
+struct rx_desc rx_ring[RX_RING_SIZE] __attribute__((aligned(16)));
 static char *rx_bufs[RX_RING_SIZE];
 
 // remember where the e1000's registers live.
@@ -100,49 +100,7 @@ e1000_init(uint32 *xregs)
 }
 
 int e1000_transmit(char *buf, int len);
-
-static void
-e1000_recv(void)
-{
-  // TODO: 3.2.3 Software must read multiple descriptors to determine the complete
-  // length for packets that span multiple receive buffers
-  
-  // loop because multiple packets could be ready and not just one.
-  acquire(&e1000_lock_rx);
-
-  int i;
-  for (i = 0; i < RX_RING_SIZE; ++i) {
-    int idx = (regs[E1000_RDT] + 1) % RX_RING_SIZE;
-    struct rx_desc *desc = &rx_ring[idx];
-    if ((desc->status & E1000_RXD_STAT_DD) != E1000_RXD_STAT_DD) {
-      // if the descriptor is not done, stop.
-      // (we have reached the head,  I think? so it's not possible for descriptors after this to be ready)
-      // Note: I imagine this happens because we always call e1000 on interrupts,
-      // and maybe the signaled interrupt is not for ready packets.
-      break;
-    }
-    
-    if ((desc->status & E1000_RXD_STAT_EOP) == 0) {
-      panic("multi-buffer packets are not supported yet.");
-      break;
-    }
-
-    //printf("* e1000_recv: processing descriptor[%d]\n", idx);
-    net_rx((char*)desc->addr, desc->length);
-  
-    // not sure if i need to update rx_buf array for this index or not. not sure why we need rx_buf at all.
-    desc->addr = (uint64)kalloc();
-    desc->status = 0;
-    __sync_synchronize();
-
-    // we have processed this packet, increment the tail to transfer ownership of the descriptor back to the hardware.
-    regs[E1000_RDT] = idx;
-  }
-  
-  release(&e1000_lock_rx);
-  if (i > 0)
-    printf("*** e1000_recv: processed %d packets\n", i);
-}
+void e1000_recv(void);
 
 void
 e1000_intr(void)

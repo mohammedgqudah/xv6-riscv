@@ -124,3 +124,4 @@ struct rx_desc
 };
 
 #define TX_RING_SIZE 16
+#define RX_RING_SIZE 16
