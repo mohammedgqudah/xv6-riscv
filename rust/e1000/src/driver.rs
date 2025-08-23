@@ -29,7 +29,7 @@ pub(crate) fn transmit(buffer: KernelBuffer) -> Result<(), ()> {
         return Err(());
     }
 
-    desc.replace_buffer(buffer);
+    desc.replace_buffer(buffer.into_device());
     desc.cmd = E1000_TXD_CMD_RS | E1000_TXD_CMD_EOP;
 
     // Ensure modifications to the descriptor
@@ -46,7 +46,7 @@ pub(crate) fn transmit(buffer: KernelBuffer) -> Result<(), ()> {
 /// Recieve all available packets in the rx ring and call `callback` with each.
 pub(crate) fn receive<F>(callback: F)
 where
-    F: Fn(u64, u32) -> (),
+    F: Fn(u64, u32),
 {
     // TODO: 3.2.3 Software must read multiple descriptors to determine the complete
     // length for packets that span multiple receive buffers

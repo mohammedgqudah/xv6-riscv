@@ -7,6 +7,8 @@ use core::mem::MaybeUninit;
 pub enum PushError {
     RingIsFull,
 }
+
+#[derive(Debug)]
 pub struct RingBuffer<T, const CAPACITY: usize> {
     queue: [MaybeUninit<T>; CAPACITY],
     /// Number of dropped items because the ring was full
@@ -43,7 +45,7 @@ impl<T, const CAPACITY: usize> RingBuffer<T, CAPACITY> {
             return Err(PushError::RingIsFull);
         }
 
-        self.queue[Self::mask(self.read + self.length) as usize].write(item);
+        self.queue[Self::mask(self.read + self.length)].write(item);
 
         self.length += 1;
 
@@ -60,7 +62,7 @@ impl<T, const CAPACITY: usize> RingBuffer<T, CAPACITY> {
         // but we checked `!self.is_empty()`, which implies
         // that the slot at index `read` was previously initialized
         // by `push` and has not yet been popped.
-        let item = unsafe { self.queue[idx as usize].assume_init_read() };
+        let item = unsafe { self.queue[idx].assume_init_read() };
 
         self.read = Self::mask(self.read + 1);
         self.length -= 1;
@@ -100,6 +102,12 @@ impl<T, const CAPACITY: usize> RingBuffer<T, CAPACITY> {
     pub fn clear(&mut self) {
         while self.pop().is_some() {}
         self.read = 0;
+    }
+}
+
+impl<T, const CAPACITY: usize> Default for RingBuffer<T, CAPACITY> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

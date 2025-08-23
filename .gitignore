@@ -29,3 +29,8 @@ barrier
 compile_commands.json
 time.txt
 rust/target/
+specs/*.pdf
+specs/*.dvi
+specs/*.out
+specs/*.tex
+specs/states

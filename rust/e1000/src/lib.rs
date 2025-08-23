@@ -63,6 +63,7 @@ impl<'a> TxRingGuard<'a> {
     }
 }
 
+#[allow(clippy::upper_case_acronyms)]
 enum Registers {
     TDT = bindings::E1000_TDT as isize,
     //TDH = bindings::E1000_TDH as isize,

@@ -4,7 +4,7 @@
 
 use core::ffi::c_void;
 
-use crate::KernelBuffer;
+use crate::{DeviceOwned, KernelBuffer};
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
 impl tx_desc {
@@ -13,11 +13,11 @@ impl tx_desc {
     }
 
     /// Free the old buffer in this descriptor and replace it with a new buffer.
-    pub fn replace_buffer(&mut self, buf: KernelBuffer) {
+    pub fn replace_buffer(&mut self, buf: KernelBuffer<DeviceOwned>) {
         if self.addr != 0 {
             unsafe { kfree(self.addr as *mut c_void) };
         }
-        self.addr = buf.page.0 as u64;
+        self.addr = buf.dma_address();
         self.length = buf.length as u16;
     }
 }

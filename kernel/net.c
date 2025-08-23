@@ -112,16 +112,7 @@ struct bind_ring_buffer *find_ring(int port) {
 // i.e. allocate any queues &c needed.
 //
 uint64
-sys_bind(void)
-{
-  int port; 
-  argint(0, &port);
-
-  struct bind_ring_buffer *ring = next_free_ring(port);
-  ring_init(ring);
-  printf("sys_bind: %d\n", port);
-  return 1;
-}
+sys_bind(void);
 
 //
 // unbind(int port)
@@ -138,6 +129,7 @@ sys_unbind(void)
   return 0;
 }
 
+uint64 sys_recv_impl(uint16 dport, uint64 srcaddr, uint64 sportaddr, uint64 bufaddr, int maxlen);
 //
 // recv(int dport, int *src, short *sport, char *buf, int maxlen)
 // if there's a received UDP packet already queued that was
@@ -168,48 +160,7 @@ sys_recv(void)
   argaddr(3, &bufaddr);
   argint(4, &maxlen);
 
-  struct bind_ring_buffer *ring = find_ring(dport);
-  if (ring == 0) {
-    printf("attempt to sys_recv an unbound port %d\n", dport);
-    return -1;
-  }
-  
-  acquire(&ring->lock);
-  while (ring_empty(ring)) {
-    //printf("sys_recv, ring is empty, sleep!\n");
-    sleep(ring, &ring->lock);
-  }
-
-  struct packet packet;
-  if (ring_dequeue(ring, &packet) != 0) {
-    printf("weird\n");
-    release(&ring->lock);
-    return -1;
-  }
-
-  release(&ring->lock);
-
-  struct eth *eth = (struct eth *) packet.buf;
-  struct ip  *ip  = (struct ip *)(eth + 1);
-  uint8 ihl = (ip->ip_vhl & 0x0F) * 4;        // bytes
-  struct udp *udp = (struct udp *)((char*)ip + ihl);
-  char *payload   = (char *)(udp + 1);
-
-  pagetable_t pagetable = myproc()->pagetable;
-
-  uint32 ipsrc = ntohl(ip->ip_src);
-  copyout(pagetable, sportddr, (char*)(&packet.sport), sizeof(short));
-  copyout(pagetable, srcaddr, (char*)(&ipsrc), sizeof(uint32));
-
-  //int buf_len = packet.len - sizeof(struct eth) - sizeof(struct ip) - sizeof(struct udp);
-  int udp_len = ntohs(udp->ulen) - (int)sizeof(struct udp);
-  if (maxlen > udp_len ) {
-    maxlen = udp_len;
-  }
-
-  copyout(pagetable, bufaddr, (char*)(payload), maxlen);
-  kfree(packet.buf);
-  return maxlen;
+  return sys_recv_impl(dport, srcaddr, sportddr, bufaddr, maxlen);
 }
 
 // This code is lifted from FreeBSD's ping.c, and is copyright by the Regents
@@ -311,42 +262,7 @@ sys_send(void)
   return 0;
 }
 
-void
-ip_rx(char *buf, int len)
-{
-  // don't delete this printf; make grade depends on it.
-  static int seen_ip = 0;
-  if(seen_ip == 0)
-    printf("ip_rx: received an IP packet\n");
-  seen_ip = 1;
-
-  struct eth *eth = (struct eth *) buf;
-  struct ip *ip = (struct ip *)(eth + 1);
-  struct udp *udp = (struct udp *)(ip + 1);
-  
-  struct bind_ring_buffer *ring = find_ring(ntohs(udp->dport));
-  
-  if (ring == 0) {
-    printf("ip_rx: recieved a packet but no process is bound to port %d\n", ntohs(udp->dport));
-    kfree(buf);
-    return;
-  }
-
-  struct packet packet = {
-    .len = len,
-    .sport = ntohs(udp->sport),
-    .buf = buf
-  };
-
-  if (ring_enqueue(ring, packet) != 0) {
-    printf("ip_rx: dropping packet, queue is full.");
-    kfree(buf);
-  }
-
-  acquire(&ring->lock);
-  wakeup(ring);
-  release(&ring->lock);
-}
+void ip_rx(char *buf, int len);
 
 //
 // send an ARP reply packet to tell qemu to map

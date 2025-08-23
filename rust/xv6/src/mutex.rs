@@ -5,6 +5,7 @@ use crate::bindings::{self};
 use core::{
     cell::UnsafeCell,
     ffi::CStr,
+    mem::ManuallyDrop,
     ops::{Deref, DerefMut},
 };
 
@@ -74,6 +75,36 @@ impl<'a, T> Drop for MutexGuard<'a, T> {
         // SAFETY: `self.spinlock` is a valid initilized structure.
         unsafe {
             bindings::release(self.mutex.spinlock.get());
+        }
+    }
+}
+
+impl<'a, T> MutexGuard<'a, T> {
+    /// Release the mutex and put the current process to sleep
+    /// on the mutex's wait-channel; on wakeup, the mutex is re-acquired
+    /// and a fresh guard is returned.
+    ///
+    /// Note: This takes `self` by value, so no borrows of `T` (e.g., `&mut T`)
+    /// can remain live across the call, to preserve Rust's aliasing XOR mutability rule.
+    pub fn proc_sleep(self) -> MutexGuard<'a, T> {
+        // `sleep` will release the lock, so don't automatically
+        // unlock (via the destructor)
+        let this = ManuallyDrop::new(self);
+        // SAFETY: We are passing a valid pointer to a `spinlock` and
+        // the lock is held (by the MutexGuard).
+        unsafe {
+            bindings::sleep(this.mutex as *const _ as *mut _, this.mutex.spinlock.get());
+        };
+        // the call to `sleep` returns after wakeup and it re-acquires the lock,
+        // so it's safe to construct the MutexGuard (we have exclusive access now).
+        MutexGuard { mutex: this.mutex }
+    }
+
+    /// Wake sleepers on this mutex's wait-channel. Note that this does
+    /// not release the lock, and it's up to the caller to release it.
+    pub fn wakeup(&self) {
+        unsafe {
+            bindings::wakeup(self.mutex as *const _ as *mut _);
         }
     }
 }

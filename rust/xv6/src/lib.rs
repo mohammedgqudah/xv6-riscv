@@ -6,46 +6,27 @@ use core::{
     fmt::{self, Write},
     panic::PanicInfo,
 };
+#[allow(
+    clippy::all,
+    clippy::pedantic,
+    clippy::nursery,
+    clippy::undocumented_unsafe_blocks,
+    clippy::missing_safety_doc,
+    non_camel_case_types,
+    non_snake_case,
+    non_upper_case_globals,
+    dead_code,
+    improper_ctypes,
+    unsafe_op_in_unsafe_fn
+)]
 pub mod bindings;
 pub mod mutex;
-
-#[repr(packed)]
-pub struct Page(*mut core::ffi::c_char);
-
-impl Page {
-    pub fn new(ptr: *mut core::ffi::c_char) -> Self {
-        Self(ptr)
-    }
-
-    pub fn free(self) {
-        kfree(self);
-    }
-}
-
-#[repr(packed)]
-pub struct KernelBuffer {
-    pub page: Page,
-    pub length: usize,
-}
-
-impl KernelBuffer {
-    pub fn new(ptr: *mut core::ffi::c_char, len: usize) -> Self {
-        Self {
-            page: Page::new(ptr),
-            length: len,
-        }
-    }
-}
-
-/// Free a 4069-byte page.
-pub fn kfree(page: Page) {
-    unsafe {
-        bindings::kfree(page.0 as _);
-    }
-}
+pub mod page;
+pub use page::{DeviceOwned, HostOwned, KernelBuffer, Page};
 
 #[panic_handler]
 fn panic_handler(_info: &PanicInfo) -> ! {
+    println!("{}", _info.message());
     unsafe {
         bindings::panic(c"rust panic".as_ptr() as *mut _);
     }
@@ -108,4 +89,3 @@ macro_rules! dbg {
         ($($crate::dbg!($val)),+,)
     };
 }
-
