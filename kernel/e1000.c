@@ -7,19 +7,24 @@
 #include "defs.h"
 #include "e1000_dev.h"
 
-#define TX_RING_SIZE 16
-static struct tx_desc tx_ring[TX_RING_SIZE] __attribute__((aligned(16)));
+extern struct tx_desc tx_ring[TX_RING_SIZE];
+struct tx_desc tx_ring[TX_RING_SIZE] __attribute__((aligned(16)));
+
 static char *tx_bufs[TX_RING_SIZE];
 
-#define RX_RING_SIZE 16
-static struct rx_desc rx_ring[RX_RING_SIZE] __attribute__((aligned(16)));
+extern struct rx_desc rx_ring[RX_RING_SIZE];
+struct rx_desc rx_ring[RX_RING_SIZE] __attribute__((aligned(16)));
 static char *rx_bufs[RX_RING_SIZE];
 
 // remember where the e1000's registers live.
-static volatile uint32 *regs;
+volatile uint32 *regs;
 
 struct spinlock e1000_lock_tx;
 struct spinlock e1000_lock_rx;
+
+volatile uint32 *get_raw_regs() {
+  return regs;
+}
 
 // called by pci_init().
 // xregs is the memory address at which the
@@ -94,86 +99,8 @@ e1000_init(uint32 *xregs)
   regs[E1000_IMS] = (1 << 7); // RXDW -- Receiver Descriptor Write Back
 }
 
-// Node: ownership of `buf` is transferred to us
-int
-e1000_transmit(char *buf, int len)
-{
-  int rc = 0;
-
-  acquire(&e1000_lock_tx);
-
-  int next_idx = regs[E1000_TDT]; // ring position
-  struct tx_desc *desc = &tx_ring[next_idx];
-  //printf("---\ne1000 transmit; \nlen=%d\ntx_idx=%d\nstatus=0x%x\n\n", len,next_idx, desc->status); 
-  if ((desc->status & E1000_TXD_STAT_DD) != E1000_TXD_STAT_DD) {
-    // a previous transition is alreay in flight.
-    // TODO: from what i understand in 2.8, this means this descriptor is now owned by the hardware,
-    // shouldn't I try the next descriptor to see if it's available?
-    printf("warning: a previous transition is already in flight\nidx=%d\n", next_idx);
-
-    rc = 1;
-    goto out;
-  }
-  
-  if (desc->addr != 0) {
-    //printf("previous descriptor was set, freeing the buffer...\n");
-    kfree((void*)desc->addr);
-  }
-
-  desc->addr = (uint64)buf;
-  desc->length = len;
-  desc->cmd = E1000_TXD_CMD_RS | E1000_TXD_CMD_EOP;
-  __sync_synchronize();
-  regs[E1000_TDT] = (regs[E1000_TDT] + 1) % TX_RING_SIZE;
-  
-  
-  out:
-    release(&e1000_lock_tx);
-    return rc;
-}
-
-static void
-e1000_recv(void)
-{
-  // TODO: 3.2.3 Software must read multiple descriptors to determine the complete
-  // length for packets that span multiple receive buffers
-  
-  // loop because multiple packets could be ready and not just one.
-  acquire(&e1000_lock_rx);
-
-  int i;
-  for (i = 0; i < RX_RING_SIZE; ++i) {
-    int idx = (regs[E1000_RDT] + 1) % RX_RING_SIZE;
-    struct rx_desc *desc = &rx_ring[idx];
-    if ((desc->status & E1000_RXD_STAT_DD) != E1000_RXD_STAT_DD) {
-      // if the descriptor is not done, stop.
-      // (we have reached the head,  I think? so it's not possible for descriptors after this to be ready)
-      // Note: I imagine this happens because we always call e1000 on interrupts,
-      // and maybe the signaled interrupt is not for ready packets.
-      break;
-    }
-    
-    if ((desc->status & E1000_RXD_STAT_EOP) == 0) {
-      panic("multi-buffer packets are not supported yet.");
-      break;
-    }
-
-    //printf("* e1000_recv: processing descriptor[%d]\n", idx);
-    net_rx((char*)desc->addr, desc->length);
-  
-    // not sure if i need to update rx_buf array for this index or not. not sure why we need rx_buf at all.
-    desc->addr = (uint64)kalloc();
-    desc->status = 0;
-    __sync_synchronize();
-
-    // we have processed this packet, increment the tail to transfer ownership of the descriptor back to the hardware.
-    regs[E1000_RDT] = idx;
-  }
-  
-  release(&e1000_lock_rx);
-  if (i > 0)
-    printf("*** e1000_recv: processed %d packets\n", i);
-}
+int e1000_transmit(char *buf, int len);
+void e1000_recv(void);
 
 void
 e1000_intr(void)
